@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sstream>
 #include <cctype>
+#include <cfloat>
 #include "BitcoinExchange.hpp"
 
 BitcoinExchange::BitcoinExchange()
@@ -37,27 +38,26 @@ void	BitcoinExchange::Convert(std::string input) const
 {
 	std::string		line;
 	std::string		date;
-	float			value;
-	float			price;
 	std::ifstream	file(input);
 
 	if (file.is_open())
 	{
 		while (std::getline(file, line))
 		{
-			if (line == "date | value")
-				continue;
 			try
 			{
 				printResult(line);
 			}
 			catch(const std::exception& e)
 			{
-				std::cerr << "Error: " << e.what() << '\n';
+				std::cerr << "Error: " <<e.what() << '\n';
 			}
+			
 		}
 		file.close();
 	}
+	else
+		throw	BitcoinExchange::CouldNotOpenFile();
 }
 
 void	BitcoinExchange::insertData(std::string& line)
@@ -65,28 +65,25 @@ void	BitcoinExchange::insertData(std::string& line)
 	if (line == "date,exchange_rate")
 		return;
 
-	std::stringstream	s_line(line);
-	std::string			date;
-	std::string			price;
+	std::stringstream	ssLine(line);
+	std::string			sDate;
+	std::string			sPrice;
 
-	std::getline(s_line, date, ',');
-	std::getline(s_line, price, '')
+	std::getline(ssLine, sDate, ',');
+	std::getline(ssLine, sPrice);
 
-	std::string::size_type	pos = line.find(',');
-	if (pos == std::string::npos)
+	if (checkDate(sDate))
 		throw	BitcoinExchange::WrongDataForm();
+	float	fPrice = checkPrice(sPrice);
 
-	std::string	date = line.substr(0, pos + 1);
-	checkDate(date);
-
-	std::string	price = line.substr(pos + 1);
-	float	f_price = checkPrice(price);
-
-	_data.insert(make_pair(date, f_price));
+	_data.insert(make_pair(sDate, fPrice));
 }
 
 void	BitcoinExchange::printResult(const std::string& line) const
 {
+	if (line == "date | value")
+		return;
+
 	std::string	date;
 	std::string	value;
 	float		price;
@@ -101,8 +98,8 @@ bool	BitcoinExchange::ifInvalidInput(const std::string& line, std::string& date,
 {
 	std::stringstream	ss(line);
 
-	std::getline(ss, date, '|');
-	std::getline(ss, value);
+	if (std::getline(ss, date, '|'))
+		std::getline(ss, value);
 
 	date = trimString(date);
 	value = trimString(value);
@@ -112,7 +109,6 @@ bool	BitcoinExchange::ifInvalidInput(const std::string& line, std::string& date,
 		std::cout << "Error: bad input => " << line << std::endl;
 		return 1;
 	}
-
 	if (checkDate(date))
 	{
 		std::cout << "Error: bad input => " << date << std::endl;
@@ -126,10 +122,10 @@ bool	BitcoinExchange::ifInvalidInput(const std::string& line, std::string& date,
 
 float	BitcoinExchange::calculatePrice(const std::string& date, const std::string& value) const
 {
-	float	f_value = strtof(value.c_str(), NULL);
-	float	price = (f_value * findPrice(date));
+	float	fValue = strtof(value.c_str(), NULL);
+	float	fPrice = (fValue * findPrice(date));
 
-	return price;
+	return fPrice;
 }
 
 bool	BitcoinExchange::checkDate(const std::string& date) const
@@ -163,29 +159,40 @@ bool	BitcoinExchange::checkDate(const std::string& date) const
 	return 0;
 }
 
+float	BitcoinExchange::checkPrice(const std::string& sPrice) const
+{
+	std::stringstream	ss(sPrice);
+	float				fPrice = 0;
+	char				c;
+
+	ss >> fPrice;
+	if (ss.fail() || ss >> c || fPrice < 0 || fPrice == FLT_MAX)
+	{
+		throw	BitcoinExchange::WrongDataForm();
+	}
+	return fPrice;
+}
+
 bool	BitcoinExchange::checkValue(const std::string& value) const
 {
 	std::stringstream	ss(value);
-	float				f_value;
+	float				fPrice = 0;
+	char				c;
 
-	if (!(ss >> f_value))
+	ss >> fPrice;
+	if (ss.fail() || ss >> c)
 	{
-		std::cout << "Error: bad input => " << value << std::endl;
+		std::cout << "Error: bad input => "  << value << std::endl;
 		return 1;
 	}
-
-	char	leftover;
-	if (ss >> leftover)
+	else if (fPrice < 0)
 	{
-		std::cout << "Error: bad input => " << value << std::endl;
-		return 1;
+		throw	BitcoinExchange::NotPositiveNumber();
 	}
-
-	if (f_value < 0)
-		throw NotPositiveNumber();
-	else if (f_value > 1000)
-		throw TooLargeNumber();
-
+	else if (fPrice == FLT_MAX || fPrice > 1000)
+	{
+		throw	BitcoinExchange::TooLargeNumber();
+	}
 	return 0;
 }
 
@@ -195,7 +202,8 @@ std::string	BitcoinExchange::trimString(std::string& str) const
 	std::string::size_type	begin = str.find_first_not_of(WHITESPACES);
 	std::string::size_type	end = str.find_last_not_of(WHITESPACES);
 
-	str = str.substr(begin, end);
+	if (begin != std::string::npos)
+		str = str.substr(begin, end + 1 - begin);
 	return str;
 }
 
@@ -205,17 +213,10 @@ float	BitcoinExchange::findPrice(const std::string& date) const
 
 	if (it == _data.end())
 		return _data.rbegin()->second;
+	else if (it == _data.begin())
+		throw	BitcoinExchange::TooEarlyDate();
 	--it;
 	return it->second;
-}
-
-std::string	BitcoinExchange::trimDateData(std::string& line) const
-{
-	std::string::size_type	end = line.find(',');
-	if (end == std::string::npos)
-		throw WrongDataForm();
-
-	std::string	date = line.substr(0, )
 }
 
 BitcoinExchange::BitcoinExchange(const BitcoinExchange& obj)
@@ -240,4 +241,19 @@ const char*	BitcoinExchange::WrongDataForm::what() const throw()
 const char*	BitcoinExchange::CouldNotOpenFile::what() const throw()
 {
 	return "could not open file.";
+}
+
+const char*	BitcoinExchange::NotPositiveNumber::what() const throw()
+{
+	return "not a positive number.";
+}
+
+const char*	BitcoinExchange::TooLargeNumber::what() const throw()
+{
+	return "too large a number.";
+}
+
+const char*	BitcoinExchange::TooEarlyDate::what() const throw()
+{
+	return "too early date.";
 }
