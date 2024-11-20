@@ -106,12 +106,12 @@ bool	BitcoinExchange::ifInvalidInput(const std::string& line, std::string& date,
 
 	if (date.size() == 0 || value.size() == 0)
 	{
-		std::cout << "Error: bad input => " << line << std::endl;
+		std::cerr << "Error: bad input => " << line << std::endl;
 		return 1;
 	}
 	if (checkDate(date))
 	{
-		std::cout << "Error: bad input => " << date << std::endl;
+		std::cerr << "Error: bad input => " << date << std::endl;
 		return 1;
 	}
 	if (checkValue(value))
@@ -182,7 +182,7 @@ bool	BitcoinExchange::checkValue(const std::string& value) const
 	ss >> fPrice;
 	if (ss.fail() || ss >> c)
 	{
-		std::cout << "Error: bad input => "  << value << std::endl;
+		std::cerr << "Error: bad input => "  << value << std::endl;
 		return 1;
 	}
 	else if (fPrice < 0)
